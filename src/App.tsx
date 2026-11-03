@@ -21,6 +21,7 @@ export function App() {
     { role: 'bot', text: 'Halo! Saya zbmaus-humanoid. Silakan berinteraksi dengan saya.', time: new Date().toLocaleTimeString('id-ID') }
   ])
   const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -38,24 +39,26 @@ export function App() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  const sendMessage = () => {
-    if (!input.trim()) return
+  const sendMessage = async () => {
+    if (!input.trim() || loading) return
     const userMsg: ChatMessage = { role: 'user', text: input, time: new Date().toLocaleTimeString('id-ID') }
     setMessages(prev => [...prev, userMsg])
     setInput('')
+    setLoading(true)
 
-    setTimeout(() => {
-      const responses: Record<string, string[]> = {
-        idle: ['Saya sedang idle. Mau saya lakukan sesuatu?', 'Siap menerima perintah.'],
-        listening: ['Saya mendengarkan Anda...', 'Silakan, saya mendengar.'],
-        thinking: ['Sedang berpikir...', 'Memproses permintaan Anda...'],
-        speaking: ['Saya sedang berbicara.', 'Mengucapkan respons...'],
-        strong: ['Mode kuat aktif!', 'Energi maksimum!'],
-      }
-      const pool = responses[state] || responses.idle
-      const reply = pool[Math.floor(Math.random() * pool.length)]
-      setMessages(prev => [...prev, { role: 'bot', text: reply, time: new Date().toLocaleTimeString('id-ID') }])
-    }, 500)
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: userMsg.text, state }),
+      })
+      const data = await res.json()
+      setMessages(prev => [...prev, { role: 'bot', text: data.reply || 'Maaf, saya tidak bisa memproses pesan ini.', time: new Date().toLocaleTimeString('id-ID') }])
+    } catch {
+      setMessages(prev => [...prev, { role: 'bot', text: 'Terjadi kesalahan jaringan. Silakan coba lagi.', time: new Date().toLocaleTimeString('id-ID') }])
+    } finally {
+      setLoading(false)
+    }
   }
 
   const changeState = (newState: string) => {
@@ -133,6 +136,13 @@ export function App() {
                 </div>
               </div>
             ))}
+            {loading && (
+              <div style={{ alignSelf: 'flex-start', maxWidth: '80%' }}>
+                <div style={{ padding: '8px 12px', borderRadius: '12px', background: 'rgba(255,255,255,0.1)', color: 'white', fontSize: '13px' }}>
+                  Sedang berpikir...
+                </div>
+              </div>
+            )}
             <div ref={chatEndRef} />
           </div>
 
@@ -160,8 +170,9 @@ export function App() {
             <input
               value={input}
               onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && sendMessage()}
+              onKeyDown={e => e.key === 'Enter' && !loading && sendMessage()}
               placeholder="Ketik pesan..."
+              disabled={loading}
               style={{
                 flex: 1,
                 padding: '8px 12px',
@@ -175,6 +186,7 @@ export function App() {
             />
             <button
               onClick={sendMessage}
+              disabled={loading}
               style={{
                 padding: '8px 16px',
                 borderRadius: '8px',
@@ -182,7 +194,8 @@ export function App() {
                 background: '#4f46e5',
                 color: 'white',
                 fontSize: '13px',
-                cursor: 'pointer',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                opacity: loading ? 0.6 : 1,
               }}
             >
               Kirim
