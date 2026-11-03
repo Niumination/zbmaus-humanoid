@@ -9,6 +9,43 @@ export default async function handler(req: any, res: any) {
     return res.status(400).json({ error: 'Message is required' })
   }
 
+  // Option A: public relay to the OMB bot (ZbmausHumanoid-Vercel).
+  // When OMB_RELAY_URL is configured, the live site talks to the real bot.
+  const relayUrl = process.env.OMB_RELAY_URL
+  const relayBearer = process.env.OMB_WEBHOOK_BEARER || process.env.OMB_ADMIN_TOKEN
+  if (relayUrl) {
+    try {
+      const r = await fetch(relayUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(relayBearer ? { Authorization: `Bearer ${relayBearer}` } : {}),
+        },
+        body: JSON.stringify({ message, state: state || 'idle' }),
+      })
+      if (r.ok) {
+        const ct = r.headers.get('content-type') || ''
+        if (ct.includes('application/json')) {
+          const data = await r.json()
+          const reply = data.reply || data.response || data.message || data.text || data.content
+          if (reply && typeof reply === 'string') {
+            return res.status(200).json({ reply })
+          }
+        } else {
+          const text = await r.text()
+          if (text && text.trim()) {
+            return res.status(200).json({ reply: text.trim() })
+          }
+        }
+      }
+      console.error('Relay error:', r.status)
+    } catch (e) {
+      console.error('Relay fetch error:', e)
+    }
+    // fall through to LLM fallback below
+  }
+
+  // Fallback: generic LLM proxy (current behavior)
   const endpoint = process.env.LLM_ENDPOINT || 'https://api.openai.com/v1/chat/completions'
   const apiKey = process.env.LLM_API_KEY || ''
   const model = process.env.LLM_MODEL || 'gpt-3.5-turbo'
@@ -18,7 +55,7 @@ export default async function handler(req: any, res: any) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model,
